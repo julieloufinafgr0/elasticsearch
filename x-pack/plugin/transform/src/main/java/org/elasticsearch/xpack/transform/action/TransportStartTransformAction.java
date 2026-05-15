@@ -285,8 +285,7 @@ public class TransportStartTransformAction extends TransportMasterNodeAction<Sta
                 parentClient,
                 ClientHelper.TRANSFORM_ORIGIN,
                 ValidateTransformAction.INSTANCE,
-                // TODO
-                new ValidateTransformAction.Request(config, true, request.ackTimeout()),
+                new ValidateTransformAction.Request(config, false, request.ackTimeout()),
                 validationListener
             );
         }, listener::onFailure);
