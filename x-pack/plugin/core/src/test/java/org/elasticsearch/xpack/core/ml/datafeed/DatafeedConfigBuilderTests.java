@@ -115,7 +115,7 @@ public class DatafeedConfigBuilderTests extends AbstractWireSerializingTestCase<
         // Note: project_routing is intentionally not randomized here to avoid validation issues
         // with mismatched indicesOptions. project_routing is tested separately in dedicated tests.
 
-        // Note: cloud_internal_credential is intentionally not randomized here. 
+        // Note: cloud_internal_credential is intentionally not randomized here.
 
         if (randomBoolean()) {
             Map<String, Object> settings = new HashMap<>();
