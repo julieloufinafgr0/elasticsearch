@@ -1471,6 +1471,18 @@ public class DatafeedConfigTests extends AbstractBWCSerializationTestCase<Datafe
         }
     }
 
+    public void testCloseReleasesCloudInternalCredentialAndIsIdempotent() {
+        PersistedCloudCredential cred = new PersistedCloudCredential("key-id", new SecureString("secret".toCharArray()));
+        DatafeedConfig.Builder builder = new DatafeedConfig.Builder("test-datafeed", "test-job");
+        builder.setIndices(List.of("logs-*"));
+        builder.setCloudInternalCredential(cred);
+        DatafeedConfig config = builder.build();
+
+        config.close();
+        expectThrows(IllegalStateException.class, () -> cred.internalApiKey().length());
+        config.close();
+    }
+
     private DatafeedConfig createDatafeedConfigFromString(String json) throws IOException {
         XContentParser parser = createParser(JsonXContent.jsonXContent, json);
         return DatafeedConfig.LENIENT_PARSER.apply(parser, null).build();

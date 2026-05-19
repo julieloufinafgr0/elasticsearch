@@ -1127,7 +1127,8 @@ public class MachineLearning extends Plugin
             xContentRegistry,
             settings,
             client,
-            machineLearningExtension.get()
+            machineLearningExtension.get(),
+            anomalyDetectionAuditor
         );
 
         // special holder for @link(MachineLearningFeatureSetUsage) which needs access to job manager if ML is enabled
