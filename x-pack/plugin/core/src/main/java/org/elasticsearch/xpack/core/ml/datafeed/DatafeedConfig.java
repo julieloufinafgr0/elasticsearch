@@ -118,9 +118,7 @@ public class DatafeedConfig implements SimpleDiffable<DatafeedConfig>, ToXConten
 
     public static final FeatureFlag DATAFEED_CROSS_PROJECT = new FeatureFlag("datafeed_cross_project");
 
-    // TODO @valeriy42: Before merging to main, regenerate transport version files to get a unique version ID
-    // private static final TransportVersion DATAFEED_PROJECT_ROUTING = TransportVersion.fromName("datafeed_project_routing");
-    static final TransportVersion DATAFEED_PROJECT_ROUTING = TransportVersion.fromName("index_limit_exceeded_exception");
+    static final TransportVersion DATAFEED_PROJECT_ROUTING = TransportVersion.fromName("datafeed_project_routing");
 
     static final TransportVersion DATAFEED_CLOUD_INTERNAL_CREDENTIAL = TransportVersion.fromName("datafeed_cloud_internal_credential");
 
