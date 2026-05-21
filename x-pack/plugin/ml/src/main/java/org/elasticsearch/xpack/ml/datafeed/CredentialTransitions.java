@@ -351,6 +351,11 @@ public final class CredentialTransitions {
                     );
                     return;
                 }
+                String securityDiagnosis = DatafeedSearchProbeDiagnostics.diagnoseSearchProbeFailure(response);
+                if (securityDiagnosis != null) {
+                    l.onFailure(new ElasticsearchStatusException(securityDiagnosis, RestStatus.FORBIDDEN));
+                    return;
+                }
                 l.onResponse(null);
             })
         );

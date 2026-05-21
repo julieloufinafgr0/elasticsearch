@@ -7,11 +7,15 @@
 package org.elasticsearch.xpack.ml.datafeed;
 
 import org.apache.logging.log4j.Level;
+import org.elasticsearch.ElasticsearchSecurityException;
+import org.elasticsearch.ElasticsearchStatusException;
 import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.DocWriteResponse;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.action.search.ShardSearchFailure;
 import org.elasticsearch.action.search.TransportSearchAction;
+import org.elasticsearch.rest.RestStatus;
 import org.elasticsearch.client.internal.Client;
 import org.elasticsearch.cluster.ClusterState;
 import org.elasticsearch.cluster.metadata.Metadata;
@@ -59,6 +63,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -127,6 +132,39 @@ public class DatafeedManagerTests extends ESTestCase {
             ActionListener<SearchResponse> listener = invocation.getArgument(2);
             SearchResponse response = mock(SearchResponse.class);
             when(response.status()).thenReturn(org.elasticsearch.rest.RestStatus.OK);
+            when(response.getClusters()).thenReturn(SearchResponse.Clusters.EMPTY);
+            when(response.getShardFailures()).thenReturn(ShardSearchFailure.EMPTY_ARRAY);
+            listener.onResponse(response);
+            return null;
+        }).when(client).execute(same(TransportSearchAction.TYPE), any(SearchRequest.class), any());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void mockSearchProbeOkWithSkippedClusterSecurityFailure(Client client) {
+        ShardSearchFailure failure = new ShardSearchFailure(
+            new ElasticsearchSecurityException("action denied", RestStatus.FORBIDDEN)
+        );
+        SearchResponse.Cluster cluster = new SearchResponse.Cluster(
+            "linked_project",
+            "linked:logs",
+            false,
+            SearchResponse.Cluster.Status.SKIPPED,
+            null,
+            null,
+            null,
+            null,
+            List.of(failure),
+            null,
+            false,
+            null
+        );
+        SearchResponse.Clusters clusters = new SearchResponse.Clusters(Map.of("linked_project", cluster));
+        doAnswer(invocation -> {
+            ActionListener<SearchResponse> listener = invocation.getArgument(2);
+            SearchResponse response = mock(SearchResponse.class);
+            when(response.status()).thenReturn(RestStatus.OK);
+            when(response.getClusters()).thenReturn(clusters);
+            when(response.getShardFailures()).thenReturn(ShardSearchFailure.EMPTY_ARRAY);
             listener.onResponse(response);
             return null;
         }).when(client).execute(same(TransportSearchAction.TYPE), any(SearchRequest.class), any());
@@ -985,6 +1023,57 @@ public class DatafeedManagerTests extends ESTestCase {
         );
 
         assertThat(failure.get(), equalTo(probeFailure));
+        verify(apiKeyService, never()).grantCloudAuthentication(any(), anyString(), any());
+    }
+
+    @SuppressWarnings("unchecked")
+    public void testProbeReturnsOkWithSecurityClusterFailureAbortsUpdateWithoutMint() {
+        Settings settings = Settings.builder().put("serverless.cross_project.enabled", true).put("xpack.security.enabled", false).build();
+
+        DatafeedConfigProvider datafeedConfigProvider = mock(DatafeedConfigProvider.class);
+        CloudCredentialManager credentialManager = mock(CloudCredentialManager.class);
+        InternalCloudApiKeyService apiKeyService = mock(InternalCloudApiKeyService.class);
+        MachineLearningExtension mlExtension = mockMlExtension(credentialManager, apiKeyService);
+        JobConfigProvider jobConfigProvider = mock(JobConfigProvider.class);
+        Client client = mock(Client.class);
+        ThreadPool threadPool = mock(ThreadPool.class);
+        when(threadPool.getThreadContext()).thenReturn(new ThreadContext(Settings.EMPTY));
+        when(client.threadPool()).thenReturn(threadPool);
+
+        DatafeedManager manager = newDatafeedManager(
+            datafeedConfigProvider,
+            jobConfigProvider,
+            settings,
+            client,
+            mlExtension,
+            mockAuditor()
+        );
+
+        when(credentialManager.hasCloudManagedCredential(any())).thenReturn(true);
+        when(credentialManager.extractCloudManagedCredential(any())).thenReturn(new CloudCredential(new SecureString("t".toCharArray())));
+
+        DatafeedConfig.Builder existingBuilder = new DatafeedConfig.Builder("test-datafeed", "test-job");
+        existingBuilder.setIndices(List.of("logs-*"));
+        withCpsSearchSurface(existingBuilder);
+        stubGetDatafeedConfig(datafeedConfigProvider, existingBuilder.build());
+
+        mockSearchProbeOkWithSkippedClusterSecurityFailure(client);
+
+        DatafeedUpdate.Builder updateBuilder = new DatafeedUpdate.Builder("test-datafeed");
+        updateBuilder.setIndices(List.of("new-logs-*"));
+        UpdateDatafeedAction.Request request = new UpdateDatafeedAction.Request(updateBuilder.build());
+
+        AtomicReference<Exception> failure = new AtomicReference<>();
+        manager.updateDatafeed(
+            request,
+            mockClusterStateForUpdate(),
+            null,
+            threadPool,
+            ActionListener.wrap(r -> fail("Expected failure"), failure::set)
+        );
+
+        assertThat(failure.get(), instanceOf(ElasticsearchStatusException.class));
+        assertThat(((ElasticsearchStatusException) failure.get()).status(), equalTo(RestStatus.FORBIDDEN));
         verify(apiKeyService, never()).grantCloudAuthentication(any(), anyString(), any());
     }
 
